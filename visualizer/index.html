@@ -1,0 +1,1224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>COBOL Bank System — Execution Visualizer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0a0e1a;
+    --bg-panel: #101731;
+    --bg-panel-alt: #161f3d;
+    --bg-raised: #1b2545;
+    --border: #263056;
+    --gold: #e8b84b;
+    --gold-soft: rgba(232, 184, 75, 0.16);
+    --gold-dim: #8a712f;
+    --text: #edf0f8;
+    --text-muted: #8b93b5;
+    --green: #3ddc84;
+    --green-soft: rgba(61, 220, 132, 0.16);
+    --red: #ff5c6c;
+    --red-soft: rgba(255, 92, 108, 0.16);
+    --teal: #4fd1c5;
+    --purple: #b18cff;
+    --blue: #5b8def;
+    --font: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+    --mono: "SF Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+  }
+
+  body {
+    min-height: 100vh;
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(232,184,75,0.07), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(91,141,239,0.08), transparent 55%),
+      var(--bg);
+    padding: 24px;
+  }
+
+  .app {
+    max-width: 1320px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 16px;
+  }
+
+  header .title-block h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 0.3px;
+  }
+
+  header .title-block h1 .accent { color: var(--gold); }
+
+  header .title-block p {
+    margin: 4px 0 0;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--bg-panel-alt);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .badge .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .badge.live .dot {
+    background: var(--green);
+    box-shadow: 0 0 6px var(--green);
+    animation: pulse-dot 1.2s infinite;
+  }
+
+  .badge.idle .dot { background: var(--gold-dim); }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+
+  /* ---------- Controls ---------- */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+  }
+
+  .controls .group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .controls .divider {
+    width: 1px;
+    align-self: stretch;
+    background: var(--border);
+    margin: 0 4px;
+  }
+
+  button, .file-btn, select {
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.1s ease, background 0.15s ease;
+  }
+
+  button:hover, .file-btn:hover, select:hover {
+    border-color: var(--gold-dim);
+    background: #202b52;
+  }
+
+  button:active { transform: translateY(1px); }
+
+  button.primary {
+    background: linear-gradient(180deg, #f0c66a, var(--gold));
+    color: #241a04;
+    border-color: var(--gold);
+    font-weight: 600;
+  }
+
+  button.primary:hover { filter: brightness(1.06); }
+
+  button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  button.icon-btn {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  input[type="file"] { display: none; }
+
+  .file-btn { display: inline-flex; align-items: center; gap: 6px; }
+
+  input[type="range"] {
+    accent-color: var(--gold);
+    width: 100%;
+  }
+
+  .scrub-wrap {
+    flex: 1 1 220px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 200px;
+  }
+
+  .scrub-wrap .pos {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    min-width: 70px;
+    text-align: right;
+  }
+
+  select { -webkit-appearance: none; appearance: none; }
+
+  /* ---------- Dropzone ---------- */
+  #dropzone.dragging {
+    outline: 2px dashed var(--gold);
+    outline-offset: -2px;
+    background: var(--gold-soft);
+  }
+
+  /* ---------- Dashboard grid ---------- */
+  .dashboard {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+    gap: 18px;
+  }
+
+  @media (max-width: 980px) {
+    .dashboard { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    min-width: 0;
+  }
+
+  .panel h2 {
+    margin: 0 0 12px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .panel h2 .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--gold);
+    background: var(--gold-soft);
+    padding: 2px 7px;
+    border-radius: 5px;
+    text-transform: none;
+    letter-spacing: 0;
+  }
+
+  /* ---------- Flowchart ---------- */
+  #flowSvg { width: 100%; height: auto; display: block; }
+
+  .node-rect {
+    fill: var(--bg-raised);
+    stroke: var(--border);
+    stroke-width: 1.5;
+    rx: 9;
+    transition: fill 0.25s ease, stroke 0.25s ease, filter 0.25s ease;
+  }
+
+  .node-label {
+    fill: var(--text);
+    font-family: var(--mono);
+    font-size: 11.5px;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+  }
+
+  .node-sub {
+    fill: var(--text-muted);
+    font-family: var(--font);
+    font-size: 9.5px;
+    text-anchor: middle;
+    dominant-baseline: middle;
+    pointer-events: none;
+  }
+
+  .edge {
+    fill: none;
+    stroke: var(--border);
+    stroke-width: 1.5;
+  }
+
+  .edge-active {
+    stroke: var(--gold);
+    stroke-width: 2.2;
+    filter: drop-shadow(0 0 3px rgba(232,184,75,0.6));
+  }
+
+  .node.active .node-rect {
+    fill: var(--gold-soft);
+    stroke: var(--gold);
+    filter: drop-shadow(0 0 8px rgba(232,184,75,0.55));
+  }
+
+  .node.active .node-label { fill: var(--gold); }
+
+  .node.flash-pass .node-rect { stroke: var(--green); filter: drop-shadow(0 0 10px rgba(61,220,132,0.65)); }
+  .node.flash-fail .node-rect { stroke: var(--red); filter: drop-shadow(0 0 10px rgba(255,92,108,0.65)); }
+
+  .logbus {
+    margin-top: 12px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--gold-dim);
+    background: var(--bg-panel-alt);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    transition: border-left-color 0.2s ease, background 0.2s ease;
+    min-height: 20px;
+    min-width: 0;
+  }
+
+  .logbus .lb-label {
+    color: var(--gold);
+    font-weight: 600;
+    white-space: nowrap;
+    flex: none;
+  }
+
+  .logbus .lb-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .logbus.flash {
+    border-left-color: var(--gold);
+    background: var(--gold-soft);
+  }
+
+  /* ---------- Balance chart ---------- */
+  #balanceChart { width: 100%; height: 220px; display: block; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 10px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex: none;
+  }
+
+  .legend-item .val {
+    font-family: var(--mono);
+    color: var(--text);
+  }
+
+  /* ---------- Stats ---------- */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .stat-box {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .stat-box .k {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .stat-box .v {
+    font-family: var(--mono);
+    font-size: 14px;
+    color: var(--text);
+    word-break: break-word;
+  }
+
+  .stat-box .v.gold { color: var(--gold); }
+  .stat-box .v.green { color: var(--green); }
+  .stat-box .v.red { color: var(--red); }
+
+  /* ---------- Log table ---------- */
+  .log-table-wrap {
+    max-height: 420px;
+    overflow-y: auto;
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+
+  table { min-width: 640px; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+
+  thead th {
+    position: sticky;
+    top: 0;
+    background: var(--bg-panel-alt);
+    color: var(--text-muted);
+    text-align: left;
+    padding: 10px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    z-index: 1;
+  }
+
+  tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid rgba(38, 48, 86, 0.6);
+    font-family: var(--mono);
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  tbody td.msg {
+    white-space: normal;
+    font-family: var(--font);
+    color: var(--text-muted);
+    min-width: 180px;
+  }
+
+  tbody tr.new-row {
+    animation: rowIn 0.5s ease;
+  }
+
+  @keyframes rowIn {
+    from { background: var(--gold-soft); }
+    to { background: transparent; }
+  }
+
+  .pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+
+  .pill.entry { background: rgba(91,141,239,0.15); color: var(--blue); }
+  .pill.exit { background: rgba(139,147,181,0.15); color: var(--text-muted); }
+  .pill.pass { background: var(--green-soft); color: var(--green); }
+  .pill.fail { background: var(--red-soft); color: var(--red); }
+  .pill.change { background: var(--gold-soft); color: var(--gold); }
+  .pill.inquiry { background: rgba(79,209,197,0.15); color: var(--teal); }
+  .pill.history { background: rgba(177,140,255,0.15); color: var(--purple); }
+  .pill.program { background: rgba(139,147,181,0.15); color: var(--text-muted); }
+
+  .empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  .empty-state .big {
+    font-size: 15px;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+
+  footer {
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 11.5px;
+    padding: 6px 0 2px;
+    overflow-wrap: anywhere;
+  }
+
+  footer a { color: var(--gold); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="app" id="dropzone">
+
+  <header>
+    <div class="title-block">
+      <h1><span class="accent">COBOL</span> Bank System — Execution Visualizer</h1>
+      <p>Replays <code>event_log.csv</code> emitted by <code>bank-system.cob</code> as a live flowchart, balance chart, and transaction log.</p>
+    </div>
+    <div class="badge idle" id="statusBadge"><span class="dot"></span><span id="statusText">No data loaded</span></div>
+  </header>
+
+  <div class="controls">
+    <div class="group">
+      <label class="file-btn" for="fileInput">📂 Upload event_log.csv</label>
+      <input type="file" id="fileInput" accept=".csv,text/csv">
+      <button id="sampleBtn">✨ Load Sample Run</button>
+      <button id="fetchBtn">⤓ Try Auto-Fetch</button>
+    </div>
+    <div class="divider"></div>
+    <div class="group">
+      <button class="icon-btn" id="restartBtn" title="Restart">⏮</button>
+      <button class="icon-btn" id="stepBackBtn" title="Step back">◁</button>
+      <button class="icon-btn primary" id="playBtn" title="Play / Pause">▶</button>
+      <button class="icon-btn" id="stepFwdBtn" title="Step forward">▷</button>
+      <button class="icon-btn" id="endBtn" title="Jump to end">⏭</button>
+    </div>
+    <select id="speedSelect">
+      <option value="1000">Speed: Slow</option>
+      <option value="450" selected>Speed: Normal</option>
+      <option value="120">Speed: Fast</option>
+    </select>
+    <div class="divider"></div>
+    <div class="scrub-wrap">
+      <input type="range" id="scrubber" min="0" max="0" value="0" step="1" disabled>
+      <span class="pos" id="scrubPos">0 / 0</span>
+    </div>
+  </div>
+
+  <div class="dashboard">
+    <div class="panel">
+      <h2>Procedure Division Flow <span class="tag" id="activeParaTag">idle</span></h2>
+      <svg id="flowSvg" viewBox="0 0 980 300" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="logbus" id="logBus">
+        <span class="lb-label">9000-LOG-EVENT ›</span>
+        <span class="lb-text" id="logBusText">waiting for a run…</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Balance Over Time</h2>
+      <canvas id="balanceChart" width="640" height="220"></canvas>
+      <div class="legend" id="chartLegend"></div>
+      <div class="stats-grid">
+        <div class="stat-box"><div class="k">Current Paragraph</div><div class="v gold" id="statPara">—</div></div>
+        <div class="stat-box"><div class="k">Account</div><div class="v" id="statAccount">—</div></div>
+        <div class="stat-box"><div class="k">Event Type</div><div class="v" id="statEvent">—</div></div>
+        <div class="stat-box"><div class="k">Balance Δ</div><div class="v" id="statDelta">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Transaction Log <span class="tag" id="logCountTag">0 events</span></h2>
+    <div class="log-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Paragraph</th>
+            <th>Account</th>
+            <th>Event</th>
+            <th>Before</th>
+            <th>After</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody id="logBody">
+          <tr><td colspan="7"><div class="empty-state"><div class="big">No events yet</div>Upload an <code>event_log.csv</code>, try auto-fetch, or load the bundled sample run to see the visualizer in action.</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <footer>
+    Reads a CSV with columns <code>timestamp,paragraph,account_id,event_type,balance_before,balance_after,message</code> — produced by <a href="../cobol/bank-system.cob">bank-system.cob</a>.
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ============================================================
+   * Flowchart definition — mirrors the PROCEDURE DIVISION layout
+   * ============================================================ */
+  var NODES = [
+    { id: "main",     x: 400, y: 8,   w: 180, h: 52, label: "1000-MAIN-PROCESS", sub: "menu dispatch" },
+    { id: "create",   x: 10,  y: 118, w: 140, h: 50, label: "1500-CREATE",       sub: "account" },
+    { id: "deposit",  x: 170, y: 118, w: 140, h: 50, label: "2000-DEPOSIT",      sub: "" },
+    { id: "withdraw", x: 330, y: 118, w: 140, h: 50, label: "3000-WITHDRAW",     sub: "" },
+    { id: "balance",  x: 490, y: 118, w: 140, h: 50, label: "3500-BALANCE-INQ",  sub: "" },
+    { id: "history",  x: 650, y: 118, w: 140, h: 50, label: "3600-HISTORY",      sub: "" },
+    { id: "interest", x: 810, y: 118, w: 160, h: 50, label: "5000-CALC-INTEREST",sub: "" },
+    { id: "validate", x: 410, y: 226, w: 160, h: 52, label: "4000-VALIDATE",     sub: "shared check" }
+  ];
+
+  var PARA_TO_NODE = {
+    "1000-MAIN-PROCESS": "main",
+    "1500-CREATE-ACCOUNT": "create",
+    "2000-DEPOSIT": "deposit",
+    "3000-WITHDRAW": "withdraw",
+    "3500-BALANCE-INQUIRY": "balance",
+    "3600-VIEW-HISTORY": "history",
+    "5000-CALC-INTEREST": "interest",
+    "4000-VALIDATE-ACCOUNT": "validate"
+  };
+
+  var DISPATCH_EDGES = ["create", "deposit", "withdraw", "balance", "history", "interest"];
+  var VALIDATE_EDGES = ["deposit", "withdraw", "balance", "history", "interest"];
+
+  var svg = document.getElementById("flowSvg");
+  var nodeById = {};
+
+  function center(n) { return { x: n.x + n.w / 2, y: n.y + n.h / 2 }; }
+  function bottom(n) { return { x: n.x + n.w / 2, y: n.y + n.h }; }
+  function top(n) { return { x: n.x + n.w / 2, y: n.y }; }
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  function buildFlowchart() {
+    var main = NODES[0];
+    var validate = NODES[7];
+
+    DISPATCH_EDGES.forEach(function (id) {
+      var n = nodeById[id];
+      var a = bottom(main), b = top(n);
+      var midY = (a.y + b.y) / 2;
+      var path = svgEl("path", {
+        d: "M " + a.x + " " + a.y + " C " + a.x + " " + midY + ", " + b.x + " " + midY + ", " + b.x + " " + b.y,
+        class: "edge",
+        "data-edge": "main-" + id
+      });
+      svg.appendChild(path);
+    });
+
+    VALIDATE_EDGES.forEach(function (id) {
+      var n = nodeById[id];
+      var a = bottom(n), b = top(validate);
+      var midY = (a.y + b.y) / 2;
+      var path = svgEl("path", {
+        d: "M " + a.x + " " + a.y + " C " + a.x + " " + midY + ", " + b.x + " " + midY + ", " + b.x + " " + b.y,
+        class: "edge",
+        "data-edge": id + "-validate"
+      });
+      svg.appendChild(path);
+    });
+
+    NODES.forEach(function (n) {
+      var g = svgEl("g", { class: "node", id: "node-" + n.id });
+      var rect = svgEl("rect", { x: n.x, y: n.y, width: n.w, height: n.h, class: "node-rect" });
+      var c = center(n);
+      var label = svgEl("text", { x: c.x, y: n.sub ? c.y - 7 : c.y, class: "node-label" });
+      label.textContent = n.label;
+      g.appendChild(rect);
+      g.appendChild(label);
+      if (n.sub) {
+        var sub = svgEl("text", { x: c.x, y: c.y + 11, class: "node-sub" });
+        sub.textContent = n.sub;
+        g.appendChild(sub);
+      }
+      svg.appendChild(g);
+      nodeById[n.id] = svg.querySelector("#node-" + n.id);
+      nodeById[n.id]._def = n;
+    });
+  }
+
+  // First pass creates lookups without DOM (needed for edge geometry), second draws.
+  NODES.forEach(function (n) { nodeById[n.id] = n; });
+  buildFlowchart();
+
+  var activeNodeEl = null;
+  function clearFlashes() {
+    svg.querySelectorAll(".node").forEach(function (g) {
+      g.classList.remove("flash-pass", "flash-fail");
+    });
+  }
+
+  function setActiveNode(paraName, eventType) {
+    var id = PARA_TO_NODE[paraName];
+    svg.querySelectorAll(".node.active").forEach(function (g) { g.classList.remove("active"); });
+    svg.querySelectorAll(".edge-active").forEach(function (e) { e.classList.remove("edge-active"); });
+    document.getElementById("activeParaTag").textContent = paraName || "idle";
+
+    if (!id) return;
+    var g = document.getElementById("node-" + id);
+    if (!g) return;
+    g.classList.add("active");
+
+    if (id === "validate") {
+      VALIDATE_EDGES.forEach(function (eid) {
+        var e = svg.querySelector('[data-edge="' + eid + '-validate"]');
+        if (e) e.classList.add("edge-active");
+      });
+    } else if (DISPATCH_EDGES.indexOf(id) !== -1) {
+      var e2 = svg.querySelector('[data-edge="main-' + id + '"]');
+      if (e2) e2.classList.add("edge-active");
+    }
+
+    if (eventType === "VALIDATION-PASS" || eventType === "BALANCE-CHANGE") {
+      g.classList.add("flash-pass");
+      setTimeout(function () { g.classList.remove("flash-pass"); }, 500);
+    } else if (eventType === "VALIDATION-FAIL") {
+      g.classList.add("flash-fail");
+      setTimeout(function () { g.classList.remove("flash-fail"); }, 500);
+    }
+  }
+
+  var logBus = document.getElementById("logBus");
+  var logBusText = document.getElementById("logBusText");
+  function flashLogBus(row) {
+    logBusText.textContent =
+      row.timestamp + "  |  " + row.paragraph + "  |  " +
+      (row.accountId || "-") + "  |  " + row.eventType + "  |  " + row.message;
+    logBus.classList.add("flash");
+    setTimeout(function () { logBus.classList.remove("flash"); }, 350);
+  }
+
+  /* ============================================================
+   * CSV parsing
+   * ============================================================ */
+  function parseCSV(text) {
+    var lines = text.replace(/\r/g, "").split("\n").filter(function (l) { return l.trim().length > 0; });
+    if (!lines.length) return [];
+    var start = 0;
+    if (/^timestamp\s*,/i.test(lines[0])) start = 1;
+
+    var rows = [];
+    for (var i = start; i < lines.length; i++) {
+      var parts = lines[i].split(",");
+      if (parts.length < 7) continue;
+      var message = parts.slice(6).join(",").trim();
+      rows.push({
+        timestamp: parts[0].trim(),
+        paragraph: parts[1].trim(),
+        accountId: parts[2].trim(),
+        eventType: parts[3].trim(),
+        balanceBefore: parseFloat(parts[4]) || 0,
+        balanceAfter: parseFloat(parts[5]) || 0,
+        message: message
+      });
+    }
+    return rows;
+  }
+
+  /* ============================================================
+   * Balance chart (hand-rolled canvas line chart)
+   * ============================================================ */
+  var PALETTE = ["#e8b84b", "#4fd1c5", "#b18cff", "#5b8def", "#ff8a5b", "#3ddc84", "#ff5c6c", "#ffd166"];
+  var PLOTTABLE = { "VALIDATION-PASS": 1, "BALANCE-CHANGE": 1, "BALANCE-INQUIRY": 1 };
+
+  var canvas = document.getElementById("balanceChart");
+  var ctx = canvas.getContext("2d");
+  var chartLegend = document.getElementById("chartLegend");
+
+  function resizeCanvas() {
+    var rect = canvas.getBoundingClientRect();
+    var dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, rect.width * dpr);
+    canvas.height = 220 * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  function fmtMoney(n) {
+    var sign = n < 0 ? "-" : "";
+    return sign + "$" + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function drawChart(accounts) {
+    resizeCanvas();
+    var w = canvas.getBoundingClientRect().width;
+    var h = 220;
+    ctx.clearRect(0, 0, w, h);
+
+    var ids = Object.keys(accounts);
+    var padL = 62, padR = 14, padT = 14, padB = 24;
+    var plotW = w - padL - padR;
+    var plotH = h - padT - padB;
+
+    if (!ids.length) {
+      ctx.fillStyle = "#8b93b5";
+      ctx.font = "12px Segoe UI, sans-serif";
+      ctx.fillText("No balance points yet", padL, h / 2);
+      return;
+    }
+
+    var min = Infinity, max = -Infinity, maxLen = 0;
+    ids.forEach(function (id) {
+      accounts[id].series.forEach(function (p) {
+        if (p.balance < min) min = p.balance;
+        if (p.balance > max) max = p.balance;
+      });
+      maxLen = Math.max(maxLen, accounts[id].series.length);
+    });
+    if (min === Infinity) { min = 0; max = 100; }
+    if (min === max) { min -= 10; max += 10; }
+    var pad = (max - min) * 0.12;
+    min -= pad; max += pad;
+    if (maxLen < 2) maxLen = 2;
+
+    // gridlines + y labels
+    ctx.strokeStyle = "#232c4d";
+    ctx.fillStyle = "#8b93b5";
+    ctx.font = "10.5px Consolas, monospace";
+    ctx.lineWidth = 1;
+    var steps = 4;
+    for (var s = 0; s <= steps; s++) {
+      var y = padT + (plotH * s) / steps;
+      ctx.beginPath();
+      ctx.moveTo(padL, y);
+      ctx.lineTo(padL + plotW, y);
+      ctx.stroke();
+      var val = max - ((max - min) * s) / steps;
+      ctx.fillText(fmtMoney(val), 4, y + 3);
+    }
+
+    function xAt(i) { return padL + (plotW * i) / (maxLen - 1); }
+    function yAt(v) { return padT + plotH - ((v - min) / (max - min)) * plotH; }
+
+    ids.forEach(function (id, idx) {
+      var acc = accounts[id];
+      var series = acc.series;
+      if (!series.length) return;
+      ctx.strokeStyle = acc.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      series.forEach(function (p, i) {
+        var x = xAt(i), y = yAt(p.balance);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+
+      // point dots
+      ctx.fillStyle = acc.color;
+      series.forEach(function (p, i) {
+        ctx.beginPath();
+        ctx.arc(xAt(i), yAt(p.balance), i === series.length - 1 ? 4 : 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    });
+  }
+
+  function renderLegend(accounts) {
+    chartLegend.innerHTML = "";
+    Object.keys(accounts).forEach(function (id) {
+      var acc = accounts[id];
+      var last = acc.series.length ? acc.series[acc.series.length - 1].balance : 0;
+      var item = document.createElement("div");
+      item.className = "legend-item";
+      item.innerHTML =
+        '<span class="legend-swatch" style="background:' + acc.color + '"></span>' +
+        '<span>' + id + '</span><span class="val">' + fmtMoney(last) + "</span>";
+      chartLegend.appendChild(item);
+    });
+  }
+
+  /* ============================================================
+   * Log table + stats
+   * ============================================================ */
+  var logBody = document.getElementById("logBody");
+  var logCountTag = document.getElementById("logCountTag");
+
+  var EVENT_PILL = {
+    "PROGRAM-START": "program", "PROGRAM-END": "program",
+    "ENTRY": "entry", "EXIT": "exit",
+    "VALIDATION-PASS": "pass", "VALIDATION-FAIL": "fail",
+    "BALANCE-CHANGE": "change", "BALANCE-INQUIRY": "inquiry",
+    "HISTORY-VIEWED": "history"
+  };
+
+  function pillFor(eventType) {
+    var cls = EVENT_PILL[eventType] || "entry";
+    return '<span class="pill ' + cls + '">' + eventType + "</span>";
+  }
+
+  function prependLogRow(row) {
+    if (logBody.dataset.empty === "1") {
+      logBody.innerHTML = "";
+      logBody.dataset.empty = "0";
+    }
+    var tr = document.createElement("tr");
+    tr.className = "new-row";
+    tr.innerHTML =
+      "<td>" + row.timestamp + "</td>" +
+      "<td>" + row.paragraph + "</td>" +
+      "<td>" + (row.accountId || "—") + "</td>" +
+      "<td>" + pillFor(row.eventType) + "</td>" +
+      "<td>" + fmtMoney(row.balanceBefore) + "</td>" +
+      "<td>" + fmtMoney(row.balanceAfter) + "</td>" +
+      "<td class=\"msg\">" + row.message + "</td>";
+    logBody.insertBefore(tr, logBody.firstChild);
+  }
+
+  function resetLogTable() {
+    logBody.dataset.empty = "1";
+    logBody.innerHTML =
+      '<tr><td colspan="7"><div class="empty-state"><div class="big">No events yet</div>' +
+      "Upload an <code>event_log.csv</code>, try auto-fetch, or load the bundled sample run.</div></td></tr>";
+  }
+
+  var statPara = document.getElementById("statPara");
+  var statAccount = document.getElementById("statAccount");
+  var statEvent = document.getElementById("statEvent");
+  var statDelta = document.getElementById("statDelta");
+
+  function renderStats(row) {
+    statPara.textContent = row.paragraph;
+    statAccount.textContent = row.accountId || "—";
+    statEvent.textContent = row.eventType;
+    var delta = row.balanceAfter - row.balanceBefore;
+    statDelta.textContent = (delta === 0 ? "" : (delta > 0 ? "+" : "")) + fmtMoney(delta);
+    statDelta.className = "v " + (delta > 0 ? "green" : (delta < 0 ? "red" : ""));
+  }
+
+  /* ============================================================
+   * Playback engine
+   * ============================================================ */
+  var events = [];
+  var cursor = -1;
+  var playing = false;
+  var timer = null;
+  var accounts = {};
+  var colorCycle = 0;
+
+  var scrubber = document.getElementById("scrubber");
+  var scrubPos = document.getElementById("scrubPos");
+  var playBtn = document.getElementById("playBtn");
+  var statusBadge = document.getElementById("statusBadge");
+  var statusText = document.getElementById("statusText");
+
+  function colorFor(id) {
+    if (!accounts[id]) {
+      accounts[id] = { color: PALETTE[colorCycle % PALETTE.length], series: [] };
+      colorCycle++;
+    }
+    return accounts[id];
+  }
+
+  function setStatus(text, live) {
+    statusText.textContent = text;
+    statusBadge.className = "badge " + (live ? "live" : "idle");
+  }
+
+  function applyEventAt(index) {
+    var row = events[index];
+    setActiveNode(row.paragraph, row.eventType);
+    flashLogBus(row);
+    prependLogRow(row);
+    renderStats(row);
+
+    if (row.accountId && PLOTTABLE[row.eventType]) {
+      var acc = colorFor(row.accountId);
+      acc.series.push({ balance: row.balanceAfter });
+      if (acc.series.length > 200) acc.series.shift();
+    }
+    drawChart(accounts);
+    renderLegend(accounts);
+  }
+
+  function rebuildUpTo(index) {
+    // Full re-render of table/chart/state up to and including `index`.
+    accounts = {};
+    colorCycle = 0;
+    resetLogTable();
+    var frag = [];
+    for (var i = 0; i <= index; i++) {
+      var row = events[i];
+      if (row.accountId && PLOTTABLE[row.eventType]) {
+        var acc = colorFor(row.accountId);
+        acc.series.push({ balance: row.balanceAfter });
+      }
+      frag.push(row);
+    }
+    // render table (most recent on top => iterate in reverse for insertion order)
+    logBody.dataset.empty = frag.length ? "0" : "1";
+    if (!frag.length) { resetLogTable(); }
+    else {
+      logBody.innerHTML = "";
+      for (var j = frag.length - 1; j >= 0; j--) {
+        var r = frag[j];
+        var tr = document.createElement("tr");
+        tr.innerHTML =
+          "<td>" + r.timestamp + "</td>" +
+          "<td>" + r.paragraph + "</td>" +
+          "<td>" + (r.accountId || "—") + "</td>" +
+          "<td>" + pillFor(r.eventType) + "</td>" +
+          "<td>" + fmtMoney(r.balanceBefore) + "</td>" +
+          "<td>" + fmtMoney(r.balanceAfter) + "</td>" +
+          "<td class=\"msg\">" + r.message + "</td>";
+        logBody.appendChild(tr);
+      }
+    }
+    drawChart(accounts);
+    renderLegend(accounts);
+    if (index >= 0) {
+      var last = events[index];
+      setActiveNode(last.paragraph, last.eventType);
+      renderStats(last);
+      flashLogBus(last);
+    } else {
+      setActiveNode(null, null);
+    }
+  }
+
+  function updateScrubber() {
+    scrubber.max = Math.max(0, events.length - 1);
+    scrubber.value = Math.max(0, cursor);
+    scrubPos.textContent = (cursor + 1) + " / " + events.length;
+    logCountTag.textContent = events.length + " events";
+  }
+
+  function stepForward() {
+    if (cursor >= events.length - 1) { pause(); return; }
+    cursor++;
+    applyEventAt(cursor);
+    updateScrubber();
+  }
+
+  function stepBackward() {
+    if (cursor <= 0) { cursor = -1; rebuildUpTo(-1); updateScrubber(); return; }
+    cursor--;
+    rebuildUpTo(cursor);
+    updateScrubber();
+  }
+
+  function play() {
+    if (!events.length || cursor >= events.length - 1) return;
+    playing = true;
+    playBtn.textContent = "⏸";
+    setStatus("Replaying event_log.csv…", true);
+    var speed = parseInt(document.getElementById("speedSelect").value, 10);
+    clearInterval(timer);
+    timer = setInterval(function () {
+      stepForward();
+      if (cursor >= events.length - 1) pause();
+    }, speed);
+  }
+
+  function pause() {
+    playing = false;
+    playBtn.textContent = "▶";
+    clearInterval(timer);
+    if (events.length) {
+      setStatus(cursor >= events.length - 1 ? "Run complete" : "Paused", false);
+    }
+  }
+
+  function togglePlay() { playing ? pause() : play(); }
+
+  function loadEvents(rows, sourceLabel) {
+    pause();
+    events = rows;
+    cursor = -1;
+    accounts = {};
+    colorCycle = 0;
+    resetLogTable();
+    drawChart({});
+    renderLegend({});
+    setActiveNode(null, null);
+    scrubber.disabled = events.length === 0;
+    updateScrubber();
+    if (!events.length) {
+      setStatus("No events found in file", false);
+      return;
+    }
+    setStatus(events.length + " events loaded from " + sourceLabel, false);
+    play();
+  }
+
+  /* ---------------- controls wiring ---------------- */
+  document.getElementById("playBtn").addEventListener("click", togglePlay);
+  document.getElementById("stepFwdBtn").addEventListener("click", function () { pause(); stepForward(); });
+  document.getElementById("stepBackBtn").addEventListener("click", function () { pause(); stepBackward(); });
+  document.getElementById("restartBtn").addEventListener("click", function () {
+    pause(); cursor = -1; rebuildUpTo(-1); updateScrubber(); setStatus("Ready", false);
+  });
+  document.getElementById("endBtn").addEventListener("click", function () {
+    pause(); cursor = events.length - 1; rebuildUpTo(cursor); updateScrubber(); setStatus("Run complete", false);
+  });
+  document.getElementById("speedSelect").addEventListener("change", function () {
+    if (playing) { pause(); play(); }
+  });
+  scrubber.addEventListener("input", function () {
+    pause();
+    cursor = parseInt(scrubber.value, 10);
+    rebuildUpTo(cursor);
+    scrubPos.textContent = (cursor + 1) + " / " + events.length;
+  });
+
+  document.getElementById("fileInput").addEventListener("change", function (e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () { loadEvents(parseCSV(reader.result), file.name); };
+    reader.readAsText(file);
+  });
+
+  document.getElementById("sampleBtn").addEventListener("click", function () {
+    loadEvents(parseCSV(SAMPLE_CSV), "bundled sample run");
+  });
+
+  document.getElementById("fetchBtn").addEventListener("click", function () {
+    var candidates = ["event_log.csv", "../cobol/event_log.csv", "../data/event_log.csv", "data/event_log.csv"];
+    setStatus("Searching for event_log.csv…", false);
+
+    function tryNext(i) {
+      if (i >= candidates.length) {
+        setStatus("Auto-fetch failed — upload a file or load the sample run", false);
+        return;
+      }
+      fetch(candidates[i], { cache: "no-store" })
+        .then(function (res) { if (!res.ok) throw new Error("not found"); return res.text(); })
+        .then(function (text) { loadEvents(parseCSV(text), candidates[i]); })
+        .catch(function () { tryNext(i + 1); });
+    }
+    tryNext(0);
+  });
+
+  // Drag & drop anywhere on the page
+  var dropzone = document.getElementById("dropzone");
+  ["dragenter", "dragover"].forEach(function (evt) {
+    dropzone.addEventListener(evt, function (e) { e.preventDefault(); dropzone.classList.add("dragging"); });
+  });
+  ["dragleave", "drop"].forEach(function (evt) {
+    dropzone.addEventListener(evt, function (e) { e.preventDefault(); dropzone.classList.remove("dragging"); });
+  });
+  dropzone.addEventListener("drop", function (e) {
+    var file = e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () { loadEvents(parseCSV(reader.result), file.name); };
+    reader.readAsText(file);
+  });
+
+  window.addEventListener("resize", function () { drawChart(accounts); });
+
+  /* ============================================================
+   * Bundled sample run (used by "Load Sample Run" and as a demo
+   * fallback so the visualizer always has something to show).
+   * ============================================================ */
+  var SAMPLE_CSV = [
+    "timestamp,paragraph,account_id,event_type,balance_before,balance_after,message",
+    "2026-08-14T09:00:01,1000-MAIN-PROCESS,,PROGRAM-START,0.00,0.00,Bank system started",
+    "2026-08-14T09:00:04,1500-CREATE-ACCOUNT,ACC001,ENTRY,0.00,0.00,Create account requested",
+    "2026-08-14T09:00:04,1500-CREATE-ACCOUNT,ACC001,VALIDATION-PASS,0.00,1000.00,Account created successfully",
+    "2026-08-14T09:00:04,1500-CREATE-ACCOUNT,ACC001,EXIT,0.00,1000.00,Create account processing complete",
+    "2026-08-14T09:00:09,1500-CREATE-ACCOUNT,ACC002,ENTRY,0.00,0.00,Create account requested",
+    "2026-08-14T09:00:09,1500-CREATE-ACCOUNT,ACC002,VALIDATION-PASS,0.00,500.00,Account created successfully",
+    "2026-08-14T09:00:09,1500-CREATE-ACCOUNT,ACC002,EXIT,0.00,500.00,Create account processing complete",
+    "2026-08-14T09:00:14,2000-DEPOSIT,ACC001,ENTRY,0.00,0.00,Deposit requested",
+    "2026-08-14T09:00:14,4000-VALIDATE-ACCOUNT,ACC001,ENTRY,0.00,0.00,Validating account",
+    "2026-08-14T09:00:14,4000-VALIDATE-ACCOUNT,ACC001,VALIDATION-PASS,1000.00,1000.00,Account validated successfully",
+    "2026-08-14T09:00:14,4000-VALIDATE-ACCOUNT,ACC001,EXIT,1000.00,1000.00,Validation processing complete",
+    "2026-08-14T09:00:14,2000-DEPOSIT,ACC001,BALANCE-CHANGE,1000.00,1250.50,Deposit applied",
+    "2026-08-14T09:00:14,2000-DEPOSIT,ACC001,EXIT,1000.00,1250.50,Deposit processing complete",
+    "2026-08-14T09:00:19,3000-WITHDRAW,ACC002,ENTRY,0.00,0.00,Withdrawal requested",
+    "2026-08-14T09:00:19,4000-VALIDATE-ACCOUNT,ACC002,ENTRY,0.00,0.00,Validating account",
+    "2026-08-14T09:00:19,4000-VALIDATE-ACCOUNT,ACC002,VALIDATION-PASS,500.00,500.00,Account validated successfully",
+    "2026-08-14T09:00:19,4000-VALIDATE-ACCOUNT,ACC002,EXIT,500.00,500.00,Validation processing complete",
+    "2026-08-14T09:00:19,3000-WITHDRAW,ACC002,VALIDATION-FAIL,0.00,0.00,Insufficient funds for withdrawal",
+    "2026-08-14T09:00:19,3000-WITHDRAW,ACC002,EXIT,0.00,0.00,Withdrawal processing complete",
+    "2026-08-14T09:00:24,3000-WITHDRAW,ACC001,ENTRY,0.00,0.00,Withdrawal requested",
+    "2026-08-14T09:00:24,4000-VALIDATE-ACCOUNT,ACC001,ENTRY,0.00,0.00,Validating account",
+    "2026-08-14T09:00:24,4000-VALIDATE-ACCOUNT,ACC001,VALIDATION-PASS,1250.50,1250.50,Account validated successfully",
+    "2026-08-14T09:00:24,4000-VALIDATE-ACCOUNT,ACC001,EXIT,1250.50,1250.50,Validation processing complete",
+    "2026-08-14T09:00:24,3000-WITHDRAW,ACC001,BALANCE-CHANGE,1250.50,1150.50,Withdrawal applied",
+    "2026-08-14T09:00:24,3000-WITHDRAW,ACC001,EXIT,1250.50,1150.50,Withdrawal processing complete",
+    "2026-08-14T09:00:29,3500-BALANCE-INQUIRY,ACC002,ENTRY,0.00,0.00,Balance inquiry requested",
+    "2026-08-14T09:00:29,4000-VALIDATE-ACCOUNT,ACC002,ENTRY,0.00,0.00,Validating account",
+    "2026-08-14T09:00:29,4000-VALIDATE-ACCOUNT,ACC002,VALIDATION-PASS,500.00,500.00,Account validated successfully",
+    "2026-08-14T09:00:29,4000-VALIDATE-ACCOUNT,ACC002,EXIT,500.00,500.00,Validation processing complete",
+    "2026-08-14T09:00:29,3500-BALANCE-INQUIRY,ACC002,BALANCE-INQUIRY,500.00,500.00,Balance retrieved",
+    "2026-08-14T09:00:29,3500-BALANCE-INQUIRY,ACC002,EXIT,500.00,500.00,Balance inquiry processing complete",
+    "2026-08-14T09:00:34,5000-CALC-INTEREST,ACC001,ENTRY,0.00,0.00,Interest calculation requested",
+    "2026-08-14T09:00:34,4000-VALIDATE-ACCOUNT,ACC001,ENTRY,0.00,0.00,Validating account",
+    "2026-08-14T09:00:34,4000-VALIDATE-ACCOUNT,ACC001,VALIDATION-PASS,1150.50,1150.50,Account validated successfully",
+    "2026-08-14T09:00:34,4000-VALIDATE-ACCOUNT,ACC001,EXIT,1150.50,1150.50,Validation processing complete",
+    "2026-08-14T09:00:34,5000-CALC-INTEREST,ACC001,BALANCE-CHANGE,1150.50,1155.23,Interest applied",
+    "2026-08-14T09:00:34,5000-CALC-INTEREST,ACC001,EXIT,1150.50,1155.23,Interest calculation processing complete",
+    "2026-08-14T09:00:39,3600-VIEW-HISTORY,ACC001,ENTRY,0.00,0.00,Transaction history requested",
+    "2026-08-14T09:00:39,4000-VALIDATE-ACCOUNT,ACC001,ENTRY,0.00,0.00,Validating account",
+    "2026-08-14T09:00:39,4000-VALIDATE-ACCOUNT,ACC001,VALIDATION-PASS,1155.23,1155.23,Account validated successfully",
+    "2026-08-14T09:00:39,4000-VALIDATE-ACCOUNT,ACC001,EXIT,1155.23,1155.23,Validation processing complete",
+    "2026-08-14T09:00:39,3600-VIEW-HISTORY,ACC001,HISTORY-VIEWED,1155.23,1155.23,Transaction history displayed",
+    "2026-08-14T09:00:39,3600-VIEW-HISTORY,ACC001,EXIT,1155.23,1155.23,Transaction history processing complete",
+    "2026-08-14T09:00:44,2000-DEPOSIT,ACC002,ENTRY,0.00,0.00,Deposit requested",
+    "2026-08-14T09:00:44,4000-VALIDATE-ACCOUNT,ACC002,ENTRY,0.00,0.00,Validating account",
+    "2026-08-14T09:00:44,4000-VALIDATE-ACCOUNT,ACC002,VALIDATION-PASS,500.00,500.00,Account validated successfully",
+    "2026-08-14T09:00:44,4000-VALIDATE-ACCOUNT,ACC002,EXIT,500.00,500.00,Validation processing complete",
+    "2026-08-14T09:00:44,2000-DEPOSIT,ACC002,BALANCE-CHANGE,500.00,725.00,Deposit applied",
+    "2026-08-14T09:00:44,2000-DEPOSIT,ACC002,EXIT,500.00,725.00,Deposit processing complete",
+    "2026-08-14T09:00:49,1000-MAIN-PROCESS,,PROGRAM-END,0.00,0.00,Bank system terminated"
+  ].join("\n");
+
+  // Warm start: show the sample run immediately so the page never looks broken.
+  loadEvents(parseCSV(SAMPLE_CSV), "bundled sample run");
+})();
+</script>
+</body>
+</html>

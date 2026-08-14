@@ -1,0 +1,16 @@
+# Compiled COBOL executable
+cobol/bank-system
+cobol/*.o
+cobol/*.so
+
+# Runtime-generated data (indexed account file, event log)
+cobol/bank-accounts.dat
+cobol/bank-accounts.idx
+cobol/event_log.csv
+data/*.csv
+data/*.dat
+data/*.idx
+
+# OS / editor cruft
+.DS_Store
+*.swp

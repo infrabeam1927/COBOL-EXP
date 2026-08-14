@@ -1,0 +1,585 @@
+      >>SOURCE FORMAT FREE
+*> ============================================================
+*> BANK-SYSTEM
+*> Bank Account Management System (GnuCOBOL)
+*>
+*> Menu-driven program supporting account creation, deposits,
+*> withdrawals, balance inquiries, transaction history and simple
+*> interest calculation. Account data is kept in an indexed
+*> (VSAM-style) file. Every key step of execution is written to
+*> event_log.csv as a structured, timestamped event so that an
+*> external tool (the web visualizer) can replay the run.
+*> ============================================================
+IDENTIFICATION DIVISION.
+PROGRAM-ID. BANK-SYSTEM.
+AUTHOR. COBOL-EXP.
+
+ENVIRONMENT DIVISION.
+INPUT-OUTPUT SECTION.
+FILE-CONTROL.
+    SELECT OPTIONAL ACCOUNT-FILE ASSIGN TO "bank-accounts.dat"
+        ORGANIZATION IS INDEXED
+        ACCESS MODE IS DYNAMIC
+        RECORD KEY IS ACC-ID
+        FILE STATUS IS WS-ACC-FILE-STATUS.
+
+    SELECT OPTIONAL EVENT-LOG-FILE ASSIGN TO "event_log.csv"
+        ORGANIZATION IS LINE SEQUENTIAL
+        FILE STATUS IS WS-LOG-FILE-STATUS.
+
+DATA DIVISION.
+FILE SECTION.
+FD  ACCOUNT-FILE.
+01  ACCOUNT-RECORD.
+    05  ACC-ID                  PIC X(10).
+    05  ACC-HOLDER-NAME         PIC X(30).
+    05  ACC-BALANCE             PIC S9(9)V99.
+    05  ACC-STATUS              PIC X(01).
+    05  ACC-TXN-COUNT           PIC 9(04).
+    05  ACC-TXN-HISTORY OCCURS 5 TIMES INDEXED BY TXN-IDX.
+        10  TXN-TYPE            PIC X(10).
+        10  TXN-AMOUNT          PIC S9(9)V99.
+        10  TXN-DATE            PIC X(10).
+
+FD  EVENT-LOG-FILE.
+01  EVENT-LOG-RECORD            PIC X(200).
+
+WORKING-STORAGE SECTION.
+
+*> --- File status / control ----------------------------------
+01  WS-ACC-FILE-STATUS          PIC XX.
+01  WS-LOG-FILE-STATUS          PIC XX.
+01  WS-CONTINUE-FLAG            PIC X VALUE "Y".
+01  WS-LOG-IS-NEW                PIC X VALUE "N".
+01  WS-MENU-CHOICE               PIC X(02).
+01  WS-CURRENT-PARAGRAPH        PIC X(24) VALUE SPACES.
+
+*> --- User input fields -----------------------------------------
+01  WS-INPUT-ACC-ID              PIC X(10).
+01  WS-INPUT-NAME                 PIC X(30).
+01  WS-INPUT-AMOUNT               PIC S9(9)V99.
+01  WS-INPUT-RATE                 PIC 9(03)V99.
+01  WS-INPUT-DAYS                 PIC 9(05).
+
+*> --- Working values ---------------------------------------------
+01  WS-INTEREST-AMT               PIC S9(9)V99.
+01  WS-VALIDATION-OK              PIC X VALUE "Y".
+01  WS-ERROR-MESSAGE              PIC X(60).
+01  WS-TXN-TYPE-TEMP              PIC X(10).
+01  WS-TXN-AMOUNT-TEMP            PIC S9(9)V99.
+01  WS-DISPLAY-INDEX              PIC 9(02).
+
+*> --- Log line construction ---------------------------------------
+01  WS-LOG-ACC-ID                 PIC X(10).
+01  WS-EVENT-TYPE                 PIC X(20).
+01  WS-LOG-MESSAGE                PIC X(60).
+01  WS-BALANCE-BEFORE             PIC S9(9)V99.
+01  WS-BALANCE-AFTER              PIC S9(9)V99.
+01  WS-BAL-BEFORE-DISPLAY         PIC -(8)9.99.
+01  WS-BAL-AFTER-DISPLAY          PIC -(8)9.99.
+01  WS-AMOUNT-DISPLAY             PIC -(8)9.99.
+01  WS-LOG-LINE                   PIC X(200).
+
+*> --- Timestamp handling ---------------------------------------
+01  WS-CURRENT-DATE-TIME          PIC X(21).
+01  WS-CDT-FIELDS REDEFINES WS-CURRENT-DATE-TIME.
+    05  WS-CDT-YYYY                PIC 9(04).
+    05  WS-CDT-MM                  PIC 9(02).
+    05  WS-CDT-DD                  PIC 9(02).
+    05  WS-CDT-HH                  PIC 9(02).
+    05  WS-CDT-MIN                 PIC 9(02).
+    05  WS-CDT-SS                  PIC 9(02).
+    05  FILLER                     PIC X(07).
+01  WS-TIMESTAMP-DISPLAY          PIC X(19) VALUE SPACES.
+01  WS-TXN-DATE-STAMP             PIC X(10) VALUE SPACES.
+
+PROCEDURE DIVISION.
+
+1000-MAIN-PROCESS.
+    PERFORM 1100-INITIALIZE
+    PERFORM UNTIL WS-CONTINUE-FLAG = "N"
+        PERFORM 1200-DISPLAY-MENU
+        PERFORM 1300-PROCESS-CHOICE
+    END-PERFORM
+    PERFORM 1900-TERMINATE
+    STOP RUN.
+
+1100-INITIALIZE.
+    OPEN I-O ACCOUNT-FILE
+    IF WS-ACC-FILE-STATUS = "35"
+        OPEN OUTPUT ACCOUNT-FILE
+        CLOSE ACCOUNT-FILE
+        OPEN I-O ACCOUNT-FILE
+    END-IF
+
+    *> OPEN EXTEND on a missing OPTIONAL file reports status "00", not
+    *> "05", so existence is probed first with OPEN INPUT.
+    OPEN INPUT EVENT-LOG-FILE
+    MOVE "N" TO WS-LOG-IS-NEW
+    IF WS-LOG-FILE-STATUS = "05"
+        MOVE "Y" TO WS-LOG-IS-NEW
+    END-IF
+    CLOSE EVENT-LOG-FILE
+
+    OPEN EXTEND EVENT-LOG-FILE
+    IF WS-LOG-IS-NEW = "Y"
+        MOVE "timestamp,paragraph,account_id,event_type,balance_before,balance_after,message"
+            TO EVENT-LOG-RECORD
+        WRITE EVENT-LOG-RECORD
+    END-IF
+
+    MOVE "1000-MAIN-PROCESS" TO WS-CURRENT-PARAGRAPH
+    MOVE SPACES TO WS-LOG-ACC-ID
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "PROGRAM-START" TO WS-EVENT-TYPE
+    MOVE "Bank system started" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT.
+
+1200-DISPLAY-MENU.
+    DISPLAY " "
+    DISPLAY "========================================"
+    DISPLAY "  BANK ACCOUNT MANAGEMENT SYSTEM"
+    DISPLAY "========================================"
+    DISPLAY "  1. Create Account"
+    DISPLAY "  2. Deposit"
+    DISPLAY "  3. Withdraw"
+    DISPLAY "  4. Balance Inquiry"
+    DISPLAY "  5. Calculate & Apply Interest"
+    DISPLAY "  6. View Transaction History"
+    DISPLAY "  7. Exit"
+    DISPLAY "----------------------------------------"
+    DISPLAY "Select an option: " WITH NO ADVANCING
+    ACCEPT WS-MENU-CHOICE.
+
+1300-PROCESS-CHOICE.
+    EVALUATE FUNCTION TRIM(WS-MENU-CHOICE)
+        WHEN "1"
+            PERFORM 1500-CREATE-ACCOUNT
+        WHEN "2"
+            PERFORM 2000-DEPOSIT
+        WHEN "3"
+            PERFORM 3000-WITHDRAW
+        WHEN "4"
+            PERFORM 3500-BALANCE-INQUIRY
+        WHEN "5"
+            PERFORM 5000-CALC-INTEREST
+        WHEN "6"
+            PERFORM 3600-VIEW-HISTORY
+        WHEN "7"
+            MOVE "N" TO WS-CONTINUE-FLAG
+        WHEN OTHER
+            DISPLAY "Invalid option, please choose 1-7."
+    END-EVALUATE.
+
+1500-CREATE-ACCOUNT.
+    MOVE "1500-CREATE-ACCOUNT" TO WS-CURRENT-PARAGRAPH
+    DISPLAY " "
+    DISPLAY "-- CREATE ACCOUNT --"
+    DISPLAY "Enter Account ID (up to 10 chars): " WITH NO ADVANCING
+    ACCEPT WS-INPUT-ACC-ID
+    MOVE WS-INPUT-ACC-ID TO WS-LOG-ACC-ID
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "ENTRY" TO WS-EVENT-TYPE
+    MOVE "Create account requested" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT
+
+    MOVE "Y" TO WS-VALIDATION-OK
+    MOVE SPACES TO WS-ERROR-MESSAGE
+
+    IF WS-INPUT-ACC-ID = SPACES
+        MOVE "N" TO WS-VALIDATION-OK
+        MOVE "Account ID cannot be blank" TO WS-ERROR-MESSAGE
+    END-IF
+
+    IF WS-VALIDATION-OK = "Y"
+        DISPLAY "Enter Holder Name: " WITH NO ADVANCING
+        ACCEPT WS-INPUT-NAME
+        DISPLAY "Enter Initial Deposit: " WITH NO ADVANCING
+        ACCEPT WS-INPUT-AMOUNT
+        IF WS-INPUT-AMOUNT < 0
+            MOVE "N" TO WS-VALIDATION-OK
+            MOVE "Initial deposit cannot be negative" TO WS-ERROR-MESSAGE
+        END-IF
+    END-IF
+
+    IF WS-VALIDATION-OK = "Y"
+        MOVE WS-INPUT-ACC-ID TO ACC-ID
+        MOVE WS-INPUT-NAME TO ACC-HOLDER-NAME
+        MOVE WS-INPUT-AMOUNT TO ACC-BALANCE
+        MOVE "A" TO ACC-STATUS
+        MOVE ZERO TO ACC-TXN-COUNT
+        WRITE ACCOUNT-RECORD
+            INVALID KEY
+                MOVE "N" TO WS-VALIDATION-OK
+                MOVE "Account ID already exists" TO WS-ERROR-MESSAGE
+        END-WRITE
+    END-IF
+
+    IF WS-VALIDATION-OK = "Y"
+        MOVE "VALIDATION-PASS" TO WS-EVENT-TYPE
+        MOVE "Account created successfully" TO WS-LOG-MESSAGE
+        MOVE ZERO TO WS-BALANCE-BEFORE
+        MOVE WS-INPUT-AMOUNT TO WS-BALANCE-AFTER
+        PERFORM 9000-LOG-EVENT
+        DISPLAY "Account created. ID: " WS-INPUT-ACC-ID
+    ELSE
+        MOVE "VALIDATION-FAIL" TO WS-EVENT-TYPE
+        MOVE WS-ERROR-MESSAGE TO WS-LOG-MESSAGE
+        PERFORM 9000-LOG-EVENT
+        DISPLAY "ERROR: " FUNCTION TRIM(WS-ERROR-MESSAGE)
+    END-IF
+
+    MOVE "EXIT" TO WS-EVENT-TYPE
+    MOVE "Create account processing complete" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT.
+
+2000-DEPOSIT.
+    MOVE "2000-DEPOSIT" TO WS-CURRENT-PARAGRAPH
+    DISPLAY " "
+    DISPLAY "-- DEPOSIT --"
+    DISPLAY "Enter Account ID: " WITH NO ADVANCING
+    ACCEPT WS-INPUT-ACC-ID
+    MOVE WS-INPUT-ACC-ID TO WS-LOG-ACC-ID
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "ENTRY" TO WS-EVENT-TYPE
+    MOVE "Deposit requested" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT
+
+    PERFORM 4000-VALIDATE-ACCOUNT
+    MOVE "2000-DEPOSIT" TO WS-CURRENT-PARAGRAPH
+
+    IF WS-VALIDATION-OK = "Y"
+        DISPLAY "Enter Deposit Amount: " WITH NO ADVANCING
+        ACCEPT WS-INPUT-AMOUNT
+        IF WS-INPUT-AMOUNT <= 0
+            DISPLAY "ERROR: Deposit amount must be positive."
+            MOVE "N" TO WS-VALIDATION-OK
+            MOVE "VALIDATION-FAIL" TO WS-EVENT-TYPE
+            MOVE "Deposit amount must be positive" TO WS-LOG-MESSAGE
+            PERFORM 9000-LOG-EVENT
+        ELSE
+            MOVE ACC-BALANCE TO WS-BALANCE-BEFORE
+            ADD WS-INPUT-AMOUNT TO ACC-BALANCE
+            MOVE ACC-BALANCE TO WS-BALANCE-AFTER
+
+            MOVE "DEPOSIT" TO WS-TXN-TYPE-TEMP
+            MOVE WS-INPUT-AMOUNT TO WS-TXN-AMOUNT-TEMP
+            PERFORM 9100-ADD-TXN-HISTORY
+
+            REWRITE ACCOUNT-RECORD
+                INVALID KEY
+                    DISPLAY "ERROR: Unable to update account record."
+            END-REWRITE
+
+            MOVE ACC-BALANCE TO WS-AMOUNT-DISPLAY
+            DISPLAY "Deposit successful. New balance: "
+                FUNCTION TRIM(WS-AMOUNT-DISPLAY)
+
+            MOVE "BALANCE-CHANGE" TO WS-EVENT-TYPE
+            MOVE "Deposit applied" TO WS-LOG-MESSAGE
+            PERFORM 9000-LOG-EVENT
+        END-IF
+    END-IF
+
+    MOVE "EXIT" TO WS-EVENT-TYPE
+    MOVE "Deposit processing complete" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT.
+
+3000-WITHDRAW.
+    MOVE "3000-WITHDRAW" TO WS-CURRENT-PARAGRAPH
+    DISPLAY " "
+    DISPLAY "-- WITHDRAW --"
+    DISPLAY "Enter Account ID: " WITH NO ADVANCING
+    ACCEPT WS-INPUT-ACC-ID
+    MOVE WS-INPUT-ACC-ID TO WS-LOG-ACC-ID
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "ENTRY" TO WS-EVENT-TYPE
+    MOVE "Withdrawal requested" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT
+
+    PERFORM 4000-VALIDATE-ACCOUNT
+    MOVE "3000-WITHDRAW" TO WS-CURRENT-PARAGRAPH
+
+    IF WS-VALIDATION-OK = "Y"
+        DISPLAY "Enter Withdrawal Amount: " WITH NO ADVANCING
+        ACCEPT WS-INPUT-AMOUNT
+        IF WS-INPUT-AMOUNT <= 0
+            DISPLAY "ERROR: Withdrawal amount must be positive."
+            MOVE "N" TO WS-VALIDATION-OK
+            MOVE "VALIDATION-FAIL" TO WS-EVENT-TYPE
+            MOVE "Withdrawal amount must be positive" TO WS-LOG-MESSAGE
+            PERFORM 9000-LOG-EVENT
+        ELSE
+            IF WS-INPUT-AMOUNT > ACC-BALANCE
+                DISPLAY "ERROR: Insufficient funds."
+                MOVE "N" TO WS-VALIDATION-OK
+                MOVE "VALIDATION-FAIL" TO WS-EVENT-TYPE
+                MOVE "Insufficient funds for withdrawal" TO WS-LOG-MESSAGE
+                PERFORM 9000-LOG-EVENT
+            ELSE
+                MOVE ACC-BALANCE TO WS-BALANCE-BEFORE
+                SUBTRACT WS-INPUT-AMOUNT FROM ACC-BALANCE
+                MOVE ACC-BALANCE TO WS-BALANCE-AFTER
+
+                MOVE "WITHDRAW" TO WS-TXN-TYPE-TEMP
+                MOVE WS-INPUT-AMOUNT TO WS-TXN-AMOUNT-TEMP
+                PERFORM 9100-ADD-TXN-HISTORY
+
+                REWRITE ACCOUNT-RECORD
+                    INVALID KEY
+                        DISPLAY "ERROR: Unable to update account record."
+                END-REWRITE
+
+                MOVE ACC-BALANCE TO WS-AMOUNT-DISPLAY
+                DISPLAY "Withdrawal successful. New balance: "
+                    FUNCTION TRIM(WS-AMOUNT-DISPLAY)
+
+                MOVE "BALANCE-CHANGE" TO WS-EVENT-TYPE
+                MOVE "Withdrawal applied" TO WS-LOG-MESSAGE
+                PERFORM 9000-LOG-EVENT
+            END-IF
+        END-IF
+    END-IF
+
+    MOVE "EXIT" TO WS-EVENT-TYPE
+    MOVE "Withdrawal processing complete" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT.
+
+3500-BALANCE-INQUIRY.
+    MOVE "3500-BALANCE-INQUIRY" TO WS-CURRENT-PARAGRAPH
+    DISPLAY " "
+    DISPLAY "-- BALANCE INQUIRY --"
+    DISPLAY "Enter Account ID: " WITH NO ADVANCING
+    ACCEPT WS-INPUT-ACC-ID
+    MOVE WS-INPUT-ACC-ID TO WS-LOG-ACC-ID
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "ENTRY" TO WS-EVENT-TYPE
+    MOVE "Balance inquiry requested" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT
+
+    PERFORM 4000-VALIDATE-ACCOUNT
+    MOVE "3500-BALANCE-INQUIRY" TO WS-CURRENT-PARAGRAPH
+
+    IF WS-VALIDATION-OK = "Y"
+        MOVE ACC-BALANCE TO WS-AMOUNT-DISPLAY
+        DISPLAY "Account Holder : " FUNCTION TRIM(ACC-HOLDER-NAME)
+        DISPLAY "Current Balance: " FUNCTION TRIM(WS-AMOUNT-DISPLAY)
+
+        MOVE ACC-BALANCE TO WS-BALANCE-BEFORE
+        MOVE ACC-BALANCE TO WS-BALANCE-AFTER
+        MOVE "BALANCE-INQUIRY" TO WS-EVENT-TYPE
+        MOVE "Balance retrieved" TO WS-LOG-MESSAGE
+        PERFORM 9000-LOG-EVENT
+    END-IF
+
+    MOVE "EXIT" TO WS-EVENT-TYPE
+    MOVE "Balance inquiry processing complete" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT.
+
+3600-VIEW-HISTORY.
+    MOVE "3600-VIEW-HISTORY" TO WS-CURRENT-PARAGRAPH
+    DISPLAY " "
+    DISPLAY "-- TRANSACTION HISTORY --"
+    DISPLAY "Enter Account ID: " WITH NO ADVANCING
+    ACCEPT WS-INPUT-ACC-ID
+    MOVE WS-INPUT-ACC-ID TO WS-LOG-ACC-ID
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "ENTRY" TO WS-EVENT-TYPE
+    MOVE "Transaction history requested" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT
+
+    PERFORM 4000-VALIDATE-ACCOUNT
+    MOVE "3600-VIEW-HISTORY" TO WS-CURRENT-PARAGRAPH
+
+    IF WS-VALIDATION-OK = "Y"
+        IF ACC-TXN-COUNT = 0
+            DISPLAY "No transactions recorded for this account."
+        ELSE
+            PERFORM VARYING WS-DISPLAY-INDEX FROM 1 BY 1
+                    UNTIL WS-DISPLAY-INDEX > ACC-TXN-COUNT
+                MOVE TXN-AMOUNT(WS-DISPLAY-INDEX) TO WS-AMOUNT-DISPLAY
+                DISPLAY FUNCTION TRIM(TXN-DATE(WS-DISPLAY-INDEX))
+                    " | " FUNCTION TRIM(TXN-TYPE(WS-DISPLAY-INDEX))
+                    " | " FUNCTION TRIM(WS-AMOUNT-DISPLAY)
+            END-PERFORM
+        END-IF
+
+        MOVE "HISTORY-VIEWED" TO WS-EVENT-TYPE
+        MOVE "Transaction history displayed" TO WS-LOG-MESSAGE
+        PERFORM 9000-LOG-EVENT
+    END-IF
+
+    MOVE "EXIT" TO WS-EVENT-TYPE
+    MOVE "Transaction history processing complete" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT.
+
+4000-VALIDATE-ACCOUNT.
+    MOVE "4000-VALIDATE-ACCOUNT" TO WS-CURRENT-PARAGRAPH
+    MOVE WS-INPUT-ACC-ID TO WS-LOG-ACC-ID
+    MOVE "Y" TO WS-VALIDATION-OK
+    MOVE SPACES TO WS-ERROR-MESSAGE
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "ENTRY" TO WS-EVENT-TYPE
+    MOVE "Validating account" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT
+
+    IF WS-INPUT-ACC-ID = SPACES
+        MOVE "N" TO WS-VALIDATION-OK
+        MOVE "Account ID cannot be blank" TO WS-ERROR-MESSAGE
+    ELSE
+        MOVE WS-INPUT-ACC-ID TO ACC-ID
+        READ ACCOUNT-FILE
+            INVALID KEY
+                MOVE "N" TO WS-VALIDATION-OK
+                MOVE "Account ID not found" TO WS-ERROR-MESSAGE
+        END-READ
+
+        IF WS-VALIDATION-OK = "Y"
+            IF ACC-STATUS NOT = "A"
+                MOVE "N" TO WS-VALIDATION-OK
+                MOVE "Account is closed" TO WS-ERROR-MESSAGE
+            END-IF
+        END-IF
+    END-IF
+
+    IF WS-VALIDATION-OK = "Y"
+        MOVE "VALIDATION-PASS" TO WS-EVENT-TYPE
+        MOVE "Account validated successfully" TO WS-LOG-MESSAGE
+        MOVE ACC-BALANCE TO WS-BALANCE-BEFORE
+        MOVE ACC-BALANCE TO WS-BALANCE-AFTER
+        PERFORM 9000-LOG-EVENT
+    ELSE
+        MOVE "VALIDATION-FAIL" TO WS-EVENT-TYPE
+        MOVE WS-ERROR-MESSAGE TO WS-LOG-MESSAGE
+        PERFORM 9000-LOG-EVENT
+        DISPLAY "ERROR: " FUNCTION TRIM(WS-ERROR-MESSAGE)
+    END-IF
+
+    MOVE "EXIT" TO WS-EVENT-TYPE
+    MOVE "Validation processing complete" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT.
+
+5000-CALC-INTEREST.
+    MOVE "5000-CALC-INTEREST" TO WS-CURRENT-PARAGRAPH
+    DISPLAY " "
+    DISPLAY "-- CALCULATE & APPLY INTEREST --"
+    DISPLAY "Enter Account ID: " WITH NO ADVANCING
+    ACCEPT WS-INPUT-ACC-ID
+    MOVE WS-INPUT-ACC-ID TO WS-LOG-ACC-ID
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "ENTRY" TO WS-EVENT-TYPE
+    MOVE "Interest calculation requested" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT
+
+    PERFORM 4000-VALIDATE-ACCOUNT
+    MOVE "5000-CALC-INTEREST" TO WS-CURRENT-PARAGRAPH
+
+    IF WS-VALIDATION-OK = "Y"
+        DISPLAY "Enter Annual Interest Rate (percent): " WITH NO ADVANCING
+        ACCEPT WS-INPUT-RATE
+        DISPLAY "Enter Number of Days: " WITH NO ADVANCING
+        ACCEPT WS-INPUT-DAYS
+
+        *> Simple interest: principal x rate x days / (100 x 365)
+        COMPUTE WS-INTEREST-AMT ROUNDED =
+            (ACC-BALANCE * WS-INPUT-RATE * WS-INPUT-DAYS) / (100 * 365)
+
+        MOVE ACC-BALANCE TO WS-BALANCE-BEFORE
+        ADD WS-INTEREST-AMT TO ACC-BALANCE
+        MOVE ACC-BALANCE TO WS-BALANCE-AFTER
+
+        MOVE "INTEREST" TO WS-TXN-TYPE-TEMP
+        MOVE WS-INTEREST-AMT TO WS-TXN-AMOUNT-TEMP
+        PERFORM 9100-ADD-TXN-HISTORY
+
+        REWRITE ACCOUNT-RECORD
+            INVALID KEY
+                DISPLAY "ERROR: Unable to update account record."
+        END-REWRITE
+
+        MOVE WS-INTEREST-AMT TO WS-AMOUNT-DISPLAY
+        DISPLAY "Interest applied: " FUNCTION TRIM(WS-AMOUNT-DISPLAY)
+        MOVE ACC-BALANCE TO WS-AMOUNT-DISPLAY
+        DISPLAY "New balance: " FUNCTION TRIM(WS-AMOUNT-DISPLAY)
+
+        MOVE "BALANCE-CHANGE" TO WS-EVENT-TYPE
+        MOVE "Interest applied" TO WS-LOG-MESSAGE
+        PERFORM 9000-LOG-EVENT
+    END-IF
+
+    MOVE "EXIT" TO WS-EVENT-TYPE
+    MOVE "Interest calculation processing complete" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT.
+
+1900-TERMINATE.
+    MOVE "1000-MAIN-PROCESS" TO WS-CURRENT-PARAGRAPH
+    MOVE SPACES TO WS-LOG-ACC-ID
+    MOVE ZERO TO WS-BALANCE-BEFORE
+    MOVE ZERO TO WS-BALANCE-AFTER
+    MOVE "PROGRAM-END" TO WS-EVENT-TYPE
+    MOVE "Bank system terminated" TO WS-LOG-MESSAGE
+    PERFORM 9000-LOG-EVENT
+    CLOSE ACCOUNT-FILE
+    CLOSE EVENT-LOG-FILE.
+
+9000-LOG-EVENT.
+    PERFORM 9200-GET-TIMESTAMP
+    MOVE WS-BALANCE-BEFORE TO WS-BAL-BEFORE-DISPLAY
+    MOVE WS-BALANCE-AFTER TO WS-BAL-AFTER-DISPLAY
+    MOVE SPACES TO WS-LOG-LINE
+
+    STRING
+        WS-TIMESTAMP-DISPLAY               DELIMITED BY SIZE
+        ","                                DELIMITED BY SIZE
+        FUNCTION TRIM(WS-CURRENT-PARAGRAPH) DELIMITED BY SIZE
+        ","                                DELIMITED BY SIZE
+        FUNCTION TRIM(WS-LOG-ACC-ID)        DELIMITED BY SIZE
+        ","                                DELIMITED BY SIZE
+        FUNCTION TRIM(WS-EVENT-TYPE)        DELIMITED BY SIZE
+        ","                                DELIMITED BY SIZE
+        FUNCTION TRIM(WS-BAL-BEFORE-DISPLAY) DELIMITED BY SIZE
+        ","                                DELIMITED BY SIZE
+        FUNCTION TRIM(WS-BAL-AFTER-DISPLAY)  DELIMITED BY SIZE
+        ","                                DELIMITED BY SIZE
+        FUNCTION TRIM(WS-LOG-MESSAGE)       DELIMITED BY SIZE
+        INTO WS-LOG-LINE
+    END-STRING
+
+    MOVE WS-LOG-LINE TO EVENT-LOG-RECORD
+    WRITE EVENT-LOG-RECORD.
+
+9100-ADD-TXN-HISTORY.
+    IF ACC-TXN-COUNT < 5
+        ADD 1 TO ACC-TXN-COUNT
+    ELSE
+        PERFORM VARYING TXN-IDX FROM 1 BY 1 UNTIL TXN-IDX > 4
+            MOVE ACC-TXN-HISTORY(TXN-IDX + 1) TO ACC-TXN-HISTORY(TXN-IDX)
+        END-PERFORM
+    END-IF
+
+    PERFORM 9200-GET-TIMESTAMP
+    MOVE WS-TIMESTAMP-DISPLAY(1:10) TO WS-TXN-DATE-STAMP
+    MOVE WS-TXN-TYPE-TEMP TO TXN-TYPE(ACC-TXN-COUNT)
+    MOVE WS-TXN-AMOUNT-TEMP TO TXN-AMOUNT(ACC-TXN-COUNT)
+    MOVE WS-TXN-DATE-STAMP TO TXN-DATE(ACC-TXN-COUNT).
+
+9200-GET-TIMESTAMP.
+    MOVE FUNCTION CURRENT-DATE TO WS-CURRENT-DATE-TIME
+    MOVE SPACES TO WS-TIMESTAMP-DISPLAY
+    STRING
+        WS-CDT-YYYY DELIMITED BY SIZE "-" DELIMITED BY SIZE
+        WS-CDT-MM   DELIMITED BY SIZE "-" DELIMITED BY SIZE
+        WS-CDT-DD   DELIMITED BY SIZE "T" DELIMITED BY SIZE
+        WS-CDT-HH   DELIMITED BY SIZE ":" DELIMITED BY SIZE
+        WS-CDT-MIN  DELIMITED BY SIZE ":" DELIMITED BY SIZE
+        WS-CDT-SS   DELIMITED BY SIZE
+        INTO WS-TIMESTAMP-DISPLAY
+    END-STRING.
